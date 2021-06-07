@@ -213,11 +213,14 @@ func (rb *ResultBuilder) RecordLatency(start time.Time, end time.Time) {
 	if !measureLatency {
 		return
 	}
-
-	value := end.Sub(start)
-
-	_ = rb.FullResult.Latency.RecordValue(value.Nanoseconds())
-	_ = rb.PartialResult.Latency.RecordValue(value.Nanoseconds())
+	var ns int64
+	if latency := end.Sub(start); latency < timeout {
+		ns = latency.Nanoseconds()
+	} else {
+		ns = timeout.Nanoseconds()
+	}
+	rb.FullResult.Latency.RecordValue(ns)
+	rb.PartialResult.Latency.RecordValue(ns)
 }
 
 var errorRecordingLatency bool
