@@ -213,11 +213,14 @@ func (rb *ResultBuilder) RecordLatency(start time.Time, end time.Time) {
 	if !measureLatency {
 		return
 	}
-
-	value := end.Sub(start)
-
-	_ = rb.FullResult.Latency.RecordValue(value.Nanoseconds())
-	_ = rb.PartialResult.Latency.RecordValue(value.Nanoseconds())
+	var ns int64
+	if latency := end.Sub(start); latency < timeout {
+		ns = latency.Nanoseconds()
+	} else {
+		ns = timeout.Nanoseconds()
+	}
+	rb.FullResult.Latency.RecordValue(ns)
+	rb.PartialResult.Latency.RecordValue(ns)
 }
 
 var errorRecordingLatency bool
@@ -258,19 +261,22 @@ func RunTest(resultChannel chan Result, workload WorkloadGenerator, rateLimiter 
 	for !iter.IsDone() {
 		rateLimiter.Wait()
 
-		start := rateLimiter.Expected()
-		if start.IsZero() {
-			start = time.Now()
+		expectedStartTime := rateLimiter.Expected()
+		if expectedStartTime.IsZero() {
+			expectedStartTime = time.Now()
 		}
 
-		err, _ := test(rb)
+		err, rawLatency := test(rb)
 		if err != nil {
-			log.Print(err)
 			rb.IncErrors()
-			continue
+			log.Print(err)
+			if rawLatency > errorToTimeoutCutoffTime {
+				// Consider this error to be timeout error and register it in histogram
+				rb.RecordLatency(start, time.Now())
+			}
+		} else {
+			rb.RecordLatency(start, time.Now())
 		}
-
-		rb.RecordLatency(start, time.Now())
 
 		now := time.Now()
 		if now.Sub(partialStart) > time.Second {
